@@ -1,3 +1,6 @@
+.vscode
+serverless
+serverless.json
 # Logs
 logs
 *.log
