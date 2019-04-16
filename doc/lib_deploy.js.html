@@ -32,54 +32,339 @@
  * @module lib/deploy
  * @license MIT
  */
-const _lambdasUri = 'https://api.github.com/repos/oskrs111/lesslms-devel/releases/latest';
+const _sourcesUri = 'https://api.github.com/repos/oskrs111/lesslms-devel/releases/latest';
 const fs = require('fs');
+const AWS = require('aws-sdk');
+const csv = require('csv-parser')
 const log = require('../src/log');
 const path = require('path');
 const got = require('got');
 const gotZip = require('got-zip');
 const _path = path.join(__dirname, '../', 'serverless');
+
+/**
+ * Variable to store s3 instance.
+ * @var
+ */
+let s3 = {};
+
+/**
+ * Variable to store AWS config.
+ * @var
+ */
+let _config = {};
+
+/**
+ * Variable to store generator instances.
+ * @var
+ */
+let _gen = {};
+
+/**
+ * Variable to store generator instances.
+ * @var
+ */
+let _gend = {};
+
 /**
  * Entry point for lib/deploy module.
  * @function
  */
 function _main() {
     log('> lesslms deploy...', 'info');
-    _getLambdas(_lambdasUri);
+    let _param = _configGet('region');
+    if (_param == null) {
+        log(`Param "region" is not defined in "serverless.json"`, 'error');
+        return;
+    }
+
+    _getCredentials((error, credentials) => {
+        if (error != undefined) {
+            log(`> ERROR > getting credentials from "credentials.csv": ${JSON.stringify(error)}`, 'error');
+            _gend.return(false);
+        }
+        //OSLL: Prepare AWS interface configuration.
+        _config = new AWS.Config({
+            accessKeyId: credentials['Access key ID'],
+            secretAccessKey: credentials['Secret access key'],
+            region: _param,
+            apiVersions: {
+                cloudformation: '2010-05-15',
+                s3: '2006-03-01'
+            }
+        });
+
+        AWS.config.update(_config);
+        s3 = new AWS.S3(); //OSLL: prepare the s3 interface with new credentials.
+
+        _gend = _deploy((error) => {});
+        _gend.next();
+    });
 }
+
 /**
- * Fetches the zipped lambda functions from repository.
- * @function
- * @param {string} uri Github API uri reference to get last release information.
+ * Runs the deployment sequence.
+ * @generator
+ * @param {stobject} credentials AWS credentials object.
+ * @callback cbk
  */
-function _getLambdas(uri) {
-    log(`> fetching last release source from: ${uri}`, 'info');
-    let _got = got(_lambdasUri);
+
+/**
+ * Called on completion.
+ * @param {cbk} callback Error first callback. 
+ */
+function* _deploy(callback) {
+    _gen = _getSources(_sourcesUri, (error) => {
+        if (error != undefined) {
+            log(`> ERROR > running deployment: ${JSON.stringify(error)}`, 'error');
+            _gend.return(false);
+        }
+        _gend.next();
+    });
+    _gen.next(); //OSLL: Activates '_getSources()' generator.
+    yield;
+
+    let _bucket = {};
+    _gen = _createBucket(_config.region, (error, bucket) => {
+        if (error != undefined) {
+            log(`> ERROR > creating bucket: ${JSON.stringify(error)}`, 'error');
+            _gend.return(false);
+        } else {
+            _configSet('bucketName', bucket.name);
+            _configSet('bucketUri', bucket.uri);
+            _bucket = bucket;
+            _gend.next();
+        }
+    });
+    _gen.next(); //OSLL: Activates '_createBucket()' generator.
+    yield;
+
+    _gen = _populateBucket(_bucket, (error) => {
+        if (error != undefined) {
+            log(`> ERROR > populating bucket: ${JSON.stringify(error)}`, 'error');
+            _gend.return(false);
+        } else {
+            _gend.next();
+        }
+    });
+    _gen.next(); //OSLL: Activates '_populateBucket()' generator.
+    yield;
+
+    callback(); //OSLL: Success!
+}
+
+/**
+ * Proceses AWS "credentials.csv" file.
+ * @generator
+ * @callback cbk
+ */
+
+/**
+ * Called on completion.
+ * @param {cbk} callback Error first callback, returns also with credentials object.
+ */
+function _getCredentials(callback) {
+    let _cred = {};
+    fs.createReadStream(path.join(__dirname, '../', 'serverless', 'credentials.csv'))
+        .pipe(csv())
+        .on('data', (data) => {
+            _cred = data;
+        })
+        .on('end', () => {
+            callback(null, _cred);
+        });
+}
+
+/**
+ * Fetches the zipped sources functions from releases repository.
+ * @generator
+ * @param {string} uri Github API uri reference to get last release information.
+ * @callback cbk
+ */
+
+/**
+ * Called on completion.
+ * @param {cbk} callback Error first callback. 
+ */
+function* _getSources(uri, callback) {
+    log(`> Fetching last release source from: ${uri}`, 'info');
+    let _source = '';
+    let _sourceName = '';
+    let _got = got(_sourcesUri);
 
     _got.then((data) => {
-        let _source = JSON.parse(data.body).assets[0].browser_download_url;
-        let _sourceName = JSON.parse(data.body).assets[0].name;
-
-        log(`> getting Lambdas from: ${_source}`, 'info');
-        let _argsz = {
-            dest: _path,
-            extract: true,
-            cleanup: false,
-            strip: 0
-        };
-
-        let _gotz = gotZip(_source, _argsz);
-        _gotz.then((data) => {
-            log(`> getting Lambdas END`, 'info');
-
-        }, (reason) => {
-            log(`> ERROR > getting Lambdas: ${JSON.stringify(reason)}`, 'error');
-        });
+        _source = JSON.parse(data.body).assets[0].browser_download_url;
+        _sourceName = JSON.parse(data.body).assets[0].name;
+        _gen.next();
 
     }, (reason) => {
         log(`> ERROR > getting last release: ${JSON.stringify(reason)}`, 'error');
+        _gen.return(false); //OSLL: Error!
+        callback(reason);
     });
+    yield;
+
+    log(`> Getting Sources from: ${_source}`, 'info');
+    let _argsz = {
+        dest: _path,
+        extract: true,
+        cleanup: false,
+        strip: 0
+    };
+
+    _got = gotZip(_source, _argsz);
+    _got.then((data) => {
+        log(`> Getting Lambdas END`, 'info');
+        _gen.next();
+    }, (reason) => {
+        log(`> ERROR > getting Lambdas: ${JSON.stringify(reason)}`, 'error');
+        _gen.return(false); //OSLL: Error!
+        callback(reason);
+    });
+    yield;
+    callback(); //OSLL: Success!
 }
+
+/**
+ * Creates a s3 bucket in AWS and uploads the Lambda source code.
+ * @generator
+ * @param {string} region AWS region where create the new bucket.
+ * @callback cbk
+ */
+
+/**
+ * Called on completion.
+ * @param {cbk} callback Error first callback, returns also with the new bucket name.
+ */
+function* _createBucket(region, callback) {
+    let _location = {};
+    let _bucket = `lesslms-${new Date().getTime()}`;
+    let params = {
+        Bucket: _bucket,
+        CreateBucketConfiguration: {
+            LocationConstraint: region
+        }
+    };
+
+    log(`> Setting up a new s3 bucket "${_bucket}"`, 'info');
+    s3.createBucket(params, function(error, data) {
+        if (error) {
+            _gen.return(false); //OSLL: Error!
+            callback(error);
+        } else {
+            _location.name = _bucket;
+            _location.uri = data.Location;
+            _gen.next();
+        }
+    });
+    yield;
+    log(`> New bucket is located at "${_location.uri}"`, 'info');
+    callback(null, _location); //OSLL: Success!
+}
+
+/**
+ * Uploads the lesslms sources to the s3 bucket.
+ * @generator
+ * @param {object} bucket s3 bucket data where perform the uploads.
+ * @callback cbk
+ */
+
+/**
+ * Called on completion.
+ * @param {cbk} callback Error first callback.
+ */
+function* _populateBucket(bucket, callback) {
+    log(`> Prepare file list for uploading...`, 'info');
+
+    //OSLL: Get top level structure of source directory. Only 2 levels are expected to use.
+    let _upload = [];
+    let _l1Path = path.join(_path, 'lesslms');
+    let _l1 = fs.readdirSync(_l1Path, { withFileTypes: true });
+    for (let i of _l1) {
+        //OSLL: Get the contents of second level and push to upload quewe...
+        if (i.isDirectory() == true) {
+            let _l2Path = path.join(_path, 'lesslms', i.name);
+            let _l2 = fs.readdirSync(_l2Path, { withFileTypes: true });
+            for (let t of _l2) {
+                if (t.isFile() == true) {
+                    t.path = path.join(_l2Path, t.name);
+                    t.bucket = `${bucket.name}/${i.name}`;
+                    t.key = t.name;
+                    _upload.push(t);
+                    log(`> File added to upload quewe: "${t.path}"`, 'info');
+                }
+            }
+        }
+    }
+
+    let _params = {};
+    for (let b of _upload) {
+        let _buffer = fs.readFileSync(b.path);
+        _params = {
+            Body: _buffer,
+            Bucket: b.bucket,
+            Key: b.key
+        };
+
+        debugger;
+        s3.putObject(_params, (error, data) => {
+            if (error) {
+                _gen.return(false); //OSLL: Error!
+                callback(error);
+            } else {
+                log(`> File uploaded success: "${b.bucket}"`, 'info');
+                _gen.next();
+            }
+        });
+        yield;
+    }
+    callback(null); //OSLL: Success!
+}
+
+/**
+ * Launches the CloudFormation script.
+ * @generator
+ * @param {string} region AWS region where create the new bucket.
+ * @callback cbk
+ */
+
+/**
+ * Called on completion.
+ * @param {cbk} callback Error first callback.
+ */
+function* _launchFormation(region, callback) {
+
+    log(`> New bucket is located at "${_location.uri}"`, 'info');
+    callback();
+}
+
+/**
+ * Helper function to retrieve parameters from 'serverless.json' config file.
+ * @function
+ * @param {string} parameter Parameter name to retrieve.
+ */
+function _configGet(parameter) {
+    let _read = fs.readFileSync(path.join(__dirname, '../', 'serverless.json'));
+    let _obj = JSON.parse(_read);
+    if (_obj[parameter] != undefined) {
+        return _obj[parameter];
+    } else return null;
+}
+
+/**
+ * Helper function to store parameters to 'serverless.json' config file.
+ * @function
+ * @param {string} parameter Parameter name to update.
+ * @param {string} value Parameter value to update.
+ */
+function _configSet(parameter, value) {
+    let _read = fs.readFileSync(path.join(__dirname, '../', 'serverless.json'));
+    let _obj = JSON.parse(_read);
+    _obj[parameter] = value;
+
+    fs.writeFileSync(path.join(__dirname, '../', 'serverless.json'), JSON.stringify(_obj, null, 4));
+}
+
 
 module.exports = _main;</code></pre>
         </article>
@@ -91,13 +376,13 @@ module.exports = _main;</code></pre>
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-index.html">index</a></li><li><a href="module-lib_deploy.html">lib/deploy</a></li><li><a href="module-lib_help.html">lib/help</a></li><li><a href="module-lib_init.html">lib/init</a></li><li><a href="module-src_log.html">src/log</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-index.html">index</a></li><li><a href="module-lib_cfpTemplate.html">lib/cfpTemplate</a></li><li><a href="module-lib_deploy.html">lib/deploy</a></li><li><a href="module-lib_help.html">lib/help</a></li><li><a href="module-lib_init.html">lib/init</a></li><li><a href="module-src_log.html">src/log</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sat Apr 13 2019 18:59:17 GMT+0200 (GMT+02:00)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Mon Apr 15 2019 14:35:02 GMT+0200 (GMT+02:00)
 </footer>
 
 <script> prettyPrint(); </script>

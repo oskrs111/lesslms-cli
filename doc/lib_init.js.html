@@ -34,18 +34,9 @@
  */
 const fs = require('fs');
 const path = require('path');
+const inquirer = require('inquirer');
 const log = require('../src/log');
 const _path = path.join(__dirname, '../', 'serverless');
-/**
- * Object to store serverless.json configuration.
- * @member
- */
-let _serverless = {};
-/**
- * Object to manage '_setupMenu_gen()' generator.
- * @member
- */
-let _setupMenu_g;
 /**
  * Entry point for lib/init module.
  * @function
@@ -53,20 +44,20 @@ let _setupMenu_g;
 function _main() {
     log('> lesslms init...', 'info');
     _buildTree();
+    _setupMenu();
 }
 /**
  * Creates the required folder structure for lesslms-cli.
  * @function
  */
 function _buildTree() {
-    log(`> check for existing ${_path}`, 'info');
+    log(`> Check for existing ${_path} folder...`, 'info');
     _rmdirSync(_path);
 
-    log(`> creating ${_path}`, 'info');
-
+    log(`> Creating ${_path} folder...`, 'info');
     setTimeout(() => {
-        ///OSLL: &lt;TO-IMPROVE> For some reason in windows a folder can't be recreated inmeditely after deleting it        
-        ///       if that folder already contained files and folders. &lt;/TO-IMPROVE>
+        //OSLL: &lt;TO-IMPROVE> For some reason in windows a folder can't be recreated inmeditely after deleting it        
+        //       if that folder already contained files and folders. &lt;/TO-IMPROVE>
         fs.mkdirSync(_path)
     }, 100);
 }
@@ -75,21 +66,22 @@ function _buildTree() {
  * @function
  */
 function _setupMenu() {
-
+    inquirer.prompt(_questions_region)
+        .then(answers => {
+            if (answers.done == false) {
+                log(`> Aborted by user, "./serverless.json" not saved.`, 'error');
+                log(`> End.`, 'error');
+            } else {
+                answers.done = undefined;
+                fs.writeFileSync(path.join(__dirname, '../', 'serverless.json'), JSON.stringify(answers, null, 4));
+                log(`> "./serverless.json" saved to disk.`, 'info');
+                log(` `, 'info');
+                log(`> Please copy your "credentials.csv" file into "./serverless/" folder before continue.`, 'warning');
+                log(`> Then run "lesslms delpoy." `, 'warning');
+            }
+            //log('ANSWERS:' + JSON.stringify(answers));
+        });
 }
-
-
-/**
- * Generator to control user interaction.
- * @generator
- */
-function* _setupMenu_gen() {
-
-}
-
-
-
-
 
 /**
  * Fetches the zipped lambda functions from repository.
@@ -105,22 +97,61 @@ function _rmdirSync(_path) {
         return;
     }
 
-    var list = fs.readdirSync(_path);
-    for (var i = 0; i &lt; list.length; i++) {
-        var filename = path.join(_path, list[i]);
+    let _list = fs.readdirSync(_path);
+    for (var i = 0; i &lt; _list.length; i++) {
+        var filename = path.join(_path, _list[i]);
         var stat = fs.statSync(filename);
 
         if (filename == "." || filename == "..") {} else if (stat.isDirectory()) {
             _rmdirSync(filename);
-            log(`> removing dir.... ${filename}`, 'info');
+            log(` > Removing dir....$ { filename }
+                            `, 'info');
         } else {
             fs.unlinkSync(filename);
-            log(`> removing file... ${filename}`, 'info');
+            log(` > Removing file...$ { filename }
+                            `, 'info');
         }
     }
-
     fs.rmdirSync(_path);
 }
+
+let _questions_region = [{
+        type: 'input',
+        name: 'name',
+        message: 'Enter a name for your lms instance:',
+        default: 'my-lesslms'
+    },
+    {
+        type: 'input',
+        name: 'email',
+        message: 'Enter a valid administrator email address:',
+        validate: (input) => {
+            let re = /^(([^&lt;>()\[\]\\.,;:\s@"]+(\.[^&lt;>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+            return re.test(String(input).toLowerCase());
+        }
+    },
+    {
+        type: 'list',
+        name: 'region',
+        message: 'Which is your AWS region?',
+        choices: ['ap-northeast-1', 'ap-northeast-2', 'ap-south-1', 'ap-southeast-1', 'ap-southeast-2',
+            'ca-central-1', 'eu-central-1', 'eu-west-1', 'eu-west-2', 'us-east-1', 'us-east-2',
+            'us-west-2'
+        ]
+    },
+    {
+        type: 'confirm',
+        name: 'sample',
+        message: 'Do you want to populate your lms with sample content?',
+        default: true
+    },
+    {
+        type: 'confirm',
+        name: 'done',
+        message: 'Is all this configuration correct?',
+        default: true
+    },
+];
 
 module.exports = _main;</code></pre>
         </article>
@@ -132,13 +163,13 @@ module.exports = _main;</code></pre>
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-index.html">index</a></li><li><a href="module-lib_deploy.html">lib/deploy</a></li><li><a href="module-lib_help.html">lib/help</a></li><li><a href="module-lib_init.html">lib/init</a></li><li><a href="module-src_log.html">src/log</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-index.html">index</a></li><li><a href="module-lib_cfpTemplate.html">lib/cfpTemplate</a></li><li><a href="module-lib_deploy.html">lib/deploy</a></li><li><a href="module-lib_help.html">lib/help</a></li><li><a href="module-lib_init.html">lib/init</a></li><li><a href="module-src_log.html">src/log</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sat Apr 13 2019 18:59:17 GMT+0200 (GMT+02:00)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Mon Apr 15 2019 14:35:02 GMT+0200 (GMT+02:00)
 </footer>
 
 <script> prettyPrint(); </script>
