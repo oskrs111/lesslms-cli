@@ -1,6 +1,6 @@
 /**
  * @file lesslms-cli tool for serverless application deployment in AWS.
- * @author Oscar Sanz <osanzl@uoc.edu>
+ * @author Oscar Sanz Llopis <osanzl@uoc.edu>
  * @module index
  * @license MIT
  */
@@ -27,6 +27,7 @@ function _main() {
     switch (cmd) {
         case 'init':
         case 'deploy':
+        case 'clean':
         case 'help':
         case 'version':
             require(`./lib/${cmd}`)(args);
