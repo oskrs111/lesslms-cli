@@ -29,6 +29,7 @@ function _main() {
         case 'deploy':
         case 'clean':
         case 'help':
+        case 'user':
         case 'version':
             require(`./lib/${cmd}`)(args);
             break;
