@@ -5,9 +5,10 @@
  * @license MIT
  */
 const fs = require('fs');
-const csv = require('csv-parser');
 const path = require('path');
 const chalk = require('chalk');
+const csv = require('csv-parser');
+const process = require('process');
 
 const _flavors = {
     def: chalk.white,
@@ -54,7 +55,7 @@ function _log(string, level) {
  */
 function _getCredentials(callback) {
     let _cred = {};
-    fs.createReadStream(path.join(__dirname, '../', 'serverless', 'credentials.csv'))
+    fs.createReadStream(path.join(process.cwd(), 'serverless', 'credentials.csv'))
         .pipe(csv())
         .on('data', (data) => {
             _cred = data;
@@ -70,7 +71,7 @@ function _getCredentials(callback) {
  * @param {string} parameter Parameter name to retrieve.
  */
 function _configGet(parameter) {
-    let _read = fs.readFileSync(path.join(__dirname, '../', 'serverless.json'));
+    let _read = fs.readFileSync(path.join(process.cwd(), 'serverless.json'));
     let _obj = JSON.parse(_read);
     if (_obj[parameter] != undefined) {
         return _obj[parameter];
@@ -84,11 +85,11 @@ function _configGet(parameter) {
  * @param {string} value Parameter value to update.
  */
 function _configSet(parameter, value) {
-    let _read = fs.readFileSync(path.join(__dirname, '../', 'serverless.json'));
+    let _read = fs.readFileSync(path.join(process.cwd(), 'serverless.json'));
     let _obj = JSON.parse(_read);
     _obj[parameter] = value;
 
-    fs.writeFileSync(path.join(__dirname, '../', 'serverless.json'), JSON.stringify(_obj, null, 4));
+    fs.writeFileSync(path.join(process.cwd(), 'serverless.json'), JSON.stringify(_obj, null, 4));
 }
 
 module.exports.log = _log;
