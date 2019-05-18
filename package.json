@@ -1,6 +1,6 @@
 {
     "name": "lesslms-cli",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "description": "Node.js CLI tool for serverless LMS (Learning Management System) automated deploy on AWS platform.",
     "main": "index.js",
     "scripts": {
